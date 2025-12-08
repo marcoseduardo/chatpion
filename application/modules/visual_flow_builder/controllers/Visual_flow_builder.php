@@ -291,6 +291,8 @@ class Visual_flow_builder extends Home
         ];
 
         $table_type = 'messenger_bot_drip_campaign';
+        // Reset filters before running the drip campaign query to avoid leaking label search conditions
+        $where_type = [];
         $where_type['where'] = array('user_id'=>$this->user_id,"page_id"=>$page_id);
         if($drip_search !== '') $where_type['like'] = ['campaign_name' => $drip_search];
         $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $drip_limit, $drip_offset, 'campaign_name');
