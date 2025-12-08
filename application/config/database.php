@@ -18,4 +18,5 @@
      $db['default']['swap_pre'] = '';
      $db['default']['autoinit'] = TRUE;
      $db['default']['stricton'] = FALSE;
-     $db['default']['save_queries'] = getenv('DB_SAVE_QUERIES') ? TRUE : FALSE;
+    $save_queries_env = getenv('DB_SAVE_QUERIES');
+    $db['default']['save_queries'] = $save_queries_env !== FALSE ? (bool) $save_queries_env : TRUE;
