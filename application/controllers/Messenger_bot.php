@@ -77,14 +77,18 @@ class Messenger_bot extends Home
         if(!$_POST) exit();
         $page_id=$this->input->post('page_id');// database id
         $media_type = $this->input->post('hidden_media_type');
-        $limit = (int)$this->input->post('limit');
-        $offset = (int)$this->input->post('offset');
+        $raw_limit = $this->input->post('limit');
+        $raw_offset = $this->input->post('offset');
+        $limit = (int)$raw_limit;
+        $offset = (int)$raw_offset;
         $search_value = trim($this->input->post('q', true));
+
+        $legacy_request = ($raw_limit === null || $raw_limit === '' ) && ($raw_offset === null || $raw_offset === '' ) && $search_value === '';
 
         $limit = ($limit > 0 && $limit <= 100) ? $limit : 20;
         $offset = ($offset >= 0) ? $offset : 0;
 
-        $cache_key = sprintf('label_dropdown_%s_%s_%s_%s_%s', $this->user_id, $page_id, $media_type, md5($search_value), $offset.'_'.$limit);
+        $cache_key = sprintf('label_dropdown_%s_%s_%s_%s_%s_%s', $this->user_id, $page_id, $media_type, md5($search_value), $legacy_request ? 'legacy' : 'paginated', $offset.'_'.$limit);
         $cached = $this->cache->get($cache_key);
         if($cached !== false)
         {
@@ -109,6 +113,20 @@ class Messenger_bot extends Home
             'results' => $results,
             'pagination' => array('more' => count($info_type) > $limit)
         );
+
+        if($legacy_request)
+        {
+            $legacy_info = $this->basic->get_data($table_type, array('where' => $where_type['where']), $select='', $join='', $limit='', $start='', 'group_name');
+            $legacy_dropdown = '<select multiple="multiple" class="form-control select2" id="label_ids" name="label_ids[]">';
+            foreach ($legacy_info as $value)
+            {
+                $legacy_dropdown .= "<option value='{$value['id']}'>".$value['group_name']."</option>";
+            }
+            $legacy_dropdown .= '</select><script>$(\"#label_ids\").select2();</script>';
+
+            $response['first_dropdown'] = $legacy_dropdown;
+        }
+
         $this->cache->save($cache_key, $response, $this->dropdown_cache_ttl);
 
         echo json_encode($response);
@@ -117,9 +135,13 @@ class Messenger_bot extends Home
     public function get_flow_campaign_info()
     {
         $this->ajax_check();
-        $limit = (int)$this->input->post('limit');
-        $offset = (int)$this->input->post('offset');
+        $raw_limit = $this->input->post('limit');
+        $raw_offset = $this->input->post('offset');
+        $limit = (int)$raw_limit;
+        $offset = (int)$raw_offset;
         $search_value = trim($this->input->post('q', true));
+
+        $legacy_request = ($raw_limit === null || $raw_limit === '' ) && ($raw_offset === null || $raw_offset === '' ) && $search_value === '';
 
         $limit = ($limit > 0 && $limit <= 100) ? $limit : 20;
         $offset = ($offset >= 0) ? $offset : 0;
@@ -160,14 +182,18 @@ class Messenger_bot extends Home
         if(!$_POST) exit();
         $page_id=$this->input->post('page_id');// database id
         $media_type = $this->input->post('hidden_media_type');
-        $limit = (int)$this->input->post('limit');
-        $offset = (int)$this->input->post('offset');
+        $raw_limit = $this->input->post('limit');
+        $raw_offset = $this->input->post('offset');
+        $limit = (int)$raw_limit;
+        $offset = (int)$raw_offset;
         $search_value = trim($this->input->post('q', true));
+
+        $legacy_request = ($raw_limit === null || $raw_limit === '' ) && ($raw_offset === null || $raw_offset === '' ) && $search_value === '';
 
         $limit = ($limit > 0 && $limit <= 100) ? $limit : 20;
         $offset = ($offset >= 0) ? $offset : 0;
 
-        $cache_key = sprintf('drip_campaign_dropdown_%s_%s_%s_%s_%s', $this->user_id, $page_id, $media_type, md5($search_value), $offset.'_'.$limit);
+        $cache_key = sprintf('drip_campaign_dropdown_%s_%s_%s_%s_%s_%s', $this->user_id, $page_id, $media_type, md5($search_value), $legacy_request ? 'legacy' : 'paginated', $offset.'_'.$limit);
         $cached = $this->cache->get($cache_key);
         if($cached !== false)
         {
@@ -193,6 +219,21 @@ class Messenger_bot extends Home
             'results' => $results,
             'pagination' => array('more' => count($info_type) > $limit)
         );
+
+        if($legacy_request)
+        {
+            $legacy_info = $this->basic->get_data($table_type, array('where' => $where_type['where']), $select='', $join='', $limit='', $start='', 'campaign_name');
+            $legacy_dropdown = '<select class="form-control select2" id="drip_campaign_id" name="drip_campaign_id[]">';
+            $legacy_dropdown .= '<option value="">'.$this->lang->line('Select').'</option>';
+            foreach ($legacy_info as $value)
+            {
+                $legacy_dropdown .= "<option value='{$value['id']}'>".$value['campaign_name']."</option>";
+            }
+            $legacy_dropdown .= '</select><script>$(\"#drip_campaign_id\").select2();</script>';
+
+            $response['dropdown_value'] = $legacy_dropdown;
+        }
+
         $this->cache->save($cache_key, $response, $this->dropdown_cache_ttl);
 
         echo json_encode($response);
