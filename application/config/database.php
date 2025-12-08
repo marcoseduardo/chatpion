@@ -18,4 +18,7 @@
      $db['default']['swap_pre'] = '';
      $db['default']['autoinit'] = TRUE;
      $db['default']['stricton'] = FALSE;
-     $db['default']['save_queries'] = getenv('DB_SAVE_QUERIES') ? TRUE : FALSE;
+    $dbSaveQueriesEnv = getenv('DB_SAVE_QUERIES');
+    $db['default']['save_queries'] = $dbSaveQueriesEnv === FALSE
+        ? TRUE
+        : (filter_var($dbSaveQueriesEnv, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? TRUE);
