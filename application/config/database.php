@@ -19,4 +19,10 @@
      $db['default']['autoinit'] = TRUE;
      $db['default']['stricton'] = FALSE;
     $save_queries_env = getenv('DB_SAVE_QUERIES');
-    $db['default']['save_queries'] = $save_queries_env !== FALSE ? (bool) $save_queries_env : TRUE;
+    if ($save_queries_env !== FALSE) {
+        $false_values = array('false', '0', 'off', 'no');
+        $db['default']['save_queries'] = ! in_array(strtolower($save_queries_env), $false_values, TRUE);
+    }
+    else {
+        $db['default']['save_queries'] = TRUE;
+    }
