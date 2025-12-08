@@ -14,7 +14,7 @@
 | path to your installation.
 |
 */
-$config['base_url'] = "";
+$config['base_url'] = getenv('APP_BASE_URL') ?: "";
 //$config['server_root']=$_SERVER['DOCUMENT_ROOT'];
 
 /*
@@ -132,8 +132,6 @@ $config['subclass_prefix'] = 'MY_';
 
 $config['permitted_uri_chars'] = 'a-z 0-9~%.:_+\-';
 
-+
-
 
 /*
 |--------------------------------------------------------------------------
@@ -186,7 +184,9 @@ $config['directory_trigger']	= 'd'; // experimental not currently in use
 | your log files will fill up very fast.
 |
 */
-$config['log_threshold'] = 0;
+$config['log_threshold'] = getenv('APP_LOG_THRESHOLD') !== false
+    ? (int) getenv('APP_LOG_THRESHOLD')
+    : 0;
 
 /*
 |--------------------------------------------------------------------------
