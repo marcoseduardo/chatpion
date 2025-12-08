@@ -182,9 +182,14 @@ class Messenger_bot extends Home
         if(!$_POST) exit();
         $page_id=$this->input->post('page_id');// database id
         $media_type = $this->input->post('hidden_media_type');
-        $limit = (int)$this->input->post('limit');
-        $offset = (int)$this->input->post('offset');
+        $raw_limit = $this->input->post('limit');
+        $raw_offset = $this->input->post('offset');
         $search_value = trim($this->input->post('q', true));
+
+        $legacy_request = ($raw_limit === null || $raw_limit === '' ) && ($raw_offset === null || $raw_offset === '' ) && $search_value === '';
+
+        $limit = (int)$raw_limit;
+        $offset = (int)$raw_offset;
 
         $limit = ($limit > 0 && $limit <= 100) ? $limit : 20;
         $offset = ($offset >= 0) ? $offset : 0;
