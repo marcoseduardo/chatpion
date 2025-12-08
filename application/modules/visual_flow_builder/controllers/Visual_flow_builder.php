@@ -290,6 +290,7 @@ class Visual_flow_builder extends Home
             'has_more' => count($info_type) >= $label_limit
         ];
 
+        $where_type = [];
         $table_type = 'messenger_bot_drip_campaign';
         $where_type['where'] = array('user_id'=>$this->user_id,"page_id"=>$page_id);
         if($drip_search !== '') $where_type['like'] = ['campaign_name' => $drip_search];
