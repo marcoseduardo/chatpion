@@ -14,6 +14,8 @@
 | path to your installation.
 |
 */
+date_default_timezone_set('America/Sao_Paulo');
+
 $config['base_url'] = getenv('APP_BASE_URL') ?: "";
 //$config['server_root']=$_SERVER['DOCUMENT_ROOT'];
 
@@ -186,7 +188,7 @@ $config['directory_trigger']	= 'd'; // experimental not currently in use
 */
 $config['log_threshold'] = getenv('APP_LOG_THRESHOLD') !== false
     ? (int) getenv('APP_LOG_THRESHOLD')
-    : 0;
+    : 1;
 
 /*
 |--------------------------------------------------------------------------
@@ -360,6 +362,8 @@ $config['rewrite_short_tags'] = FALSE;
 |
 */
 $config['proxy_ips'] = '';
+
+$config['composer_autoload'] = FCPATH . 'vendor/autoload.php';
 
 
 /* End of file config.php */
