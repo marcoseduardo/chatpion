@@ -109,6 +109,19 @@ class Messenger_bot extends Home
             'results' => $results,
             'pagination' => array('more' => count($info_type) > $limit)
         );
+
+        // Legacy HTML response for existing callers
+        $all_label_list = $this->basic->get_data($table_type, $where_type, $select='', $join='', $limit='', $start='', 'group_name');
+        $first_dropdown = '<script>$("#label_ids").select2();</script>';
+        $first_dropdown .= '<select multiple="" class="form-control select2" id="label_ids" name="label_ids[]">';
+        $first_dropdown .= '<option value="">'.$this->lang->line('Select Labels').'</option>';
+        foreach ($all_label_list as $value)
+        {
+            $first_dropdown .= "<option value='{$value['id']}'>{$value['group_name']}</option>";
+        }
+        $first_dropdown .= '</select>';
+
+        $response['first_dropdown'] = $first_dropdown;
         $this->cache->save($cache_key, $response, $this->dropdown_cache_ttl);
 
         echo json_encode($response);
@@ -193,6 +206,19 @@ class Messenger_bot extends Home
             'results' => $results,
             'pagination' => array('more' => count($info_type) > $limit)
         );
+
+        // Legacy HTML response for existing callers
+        $all_campaigns = $this->basic->get_data($table_type, $where_type, $select='', $join='', $limit='', $start='', 'campaign_name');
+        $dropdown_value = '<script>$("#drip_campaign_id").select2();</script>';
+        $dropdown_value .= '<select class="form-control select2" id="drip_campaign_id" name="drip_campaign_id[]">';
+        $dropdown_value .= '<option value=""></option>';
+        foreach ($all_campaigns as $value)
+        {
+            $dropdown_value .= "<option value='{$value['id']}'>{$value['campaign_name']}</option>";
+        }
+        $dropdown_value .= '</select>';
+
+        $response['dropdown_value'] = $dropdown_value;
         $this->cache->save($cache_key, $response, $this->dropdown_cache_ttl);
 
         echo json_encode($response);
