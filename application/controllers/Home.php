@@ -4544,27 +4544,94 @@ class Home extends CI_Controller
 
         $response_raw=file_get_contents("php://input");
 
-        if(!isset($response_raw) || $response_raw=='') exit; 
+        // Fallback to POST parameter when php://input is empty (e.g. certain proxy setups)
+        if(!isset($response_raw) || $response_raw=='')
+            $response_raw = $this->input->get_post('response_raw');
+
+        if(!isset($response_raw) || $response_raw=='')
+        {
+            http_response_code(400);
+            return;
+        }
 
         $json_response=array("response_raw"=>$response_raw);
         $response = json_decode($response_raw, true);
 
+        $url = $this->resolve_webhook_target($response);
+
+        // nothing to do for ignored events, but still acknowledge to stop retries
+        if($url=='')
+        {
+            $this->acknowledge_webhook();
+            return;
+        }
+
+        $this->acknowledge_webhook();
+        $this->forward_webhook_payload($url, $json_response);
+    }
+
+    /**
+     * Keep response latency low by replying before any heavy processing.
+     */
+    private function acknowledge_webhook(): void
+    {
+        if(!headers_sent()) {
+            header('Content-Type: text/plain');
+            http_response_code(200);
+        }
+
+        echo 'OK';
+
+        if(function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+        else
+        {
+            @ob_flush();
+            @flush();
+        }
+    }
+
+    /**
+     * Route webhook events to the appropriate internal endpoint while keeping
+     * outbound cURL latency low for high-volume traffic.
+     */
+    private function forward_webhook_payload($url = '', $json_response = array()): void
+    {
+        if($url=='') return;
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch,CURLOPT_POST,1);
+        curl_setopt($ch,CURLOPT_POSTFIELDS,$json_response);
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, 500);
+        curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
+        curl_setopt($ch, CURLOPT_HEADER, false);
+        curl_exec($ch);
+        curl_close($ch);
+    }
+
+    /**
+     * Determine the correct endpoint for a webhook payload. Returns an empty
+     * string when the event should be acknowledged and ignored.
+     */
+    private function resolve_webhook_target($response = array()): string
+    {
         if(isset($response['entry'][0]['messaging']))
         {
-          
-            $url=base_url()."messenger_bot/webhook_callback_main";
-            if(isset($response['entry']['0']['messaging'][0]['read'])) exit; 
+            if(isset($response['entry']['0']['messaging'][0]['read'])) return '';
 
-        } 
+            return base_url()."messenger_bot/webhook_callback_main";
+        }
 
-        else if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'comment') {
-            $url=base_url()."comment_automation/webhook_callback_main";
-
+        if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'comment')
+        {
             $commenter_id = isset($response['entry'][0]['changes'][0]['value']['sender_id']) ? $response['entry'][0]['changes'][0]['value']['sender_id'] : $response['entry'][0]['changes'][0]['value']['from']['id'];
             $page_id = $response['entry'][0]['id'];
 
             //If activity by Page it self, then exit
-            if($page_id==$commenter_id) exit;
+            if($page_id==$commenter_id) return '';
 
             // 2nd level relpy is turned off
             $post_id = isset($response['entry'][0]['changes'][0]['value']['parent_id']) ? $response['entry'][0]['changes'][0]['value']['parent_id']:"";
@@ -4575,51 +4642,41 @@ class Home extends CI_Controller
 
             $comment_id_array=explode("_", $comment_id);
 
-            if($page_id!=$parent_id_page_id && $comment_id_array[0]==$parent_id_page_id_array[0]){ // From 2nd reply Comment. 
-                exit; 
-            }
+            if($page_id!=$parent_id_page_id && $comment_id_array[0]==$parent_id_page_id_array[0]) // From 2nd reply Comment.
+                return '';
 
-            //If already replied that comment, then exit 
+            //If already replied that comment, then exit
             $comment_id = isset($response['entry'][0]['changes'][0]['value']['comment_id']) ? $response['entry'][0]['changes'][0]['value']['comment_id']:"";
             $already_replied_comment_id = $this->basic->get_data('facebook_ex_autoreply_report',array('where'=>array('comment_id'=>$comment_id)));
-            if(!empty($already_replied_comment_id)) exit;          
+            if(!empty($already_replied_comment_id)) return '';
+
+            return base_url()."comment_automation/webhook_callback_main";
         }
 
-        else if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'reaction')
-        {
-            exit;
-        }
+        if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'reaction')
+            return '';
 
-        else if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'photo') 
+        if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'photo')
         {
             if(isset($response['entry'][0]['changes'][0]['value']['verb']) && $response['entry'][0]['changes'][0]['value']['verb'] == 'edited')
-                exit;
-            $url=base_url()."comment_automation/webhook_callback_main";
+                return '';
+            return base_url()."comment_automation/webhook_callback_main";
         }
 
-        else if(isset($response['entry'][0]['changes'][0]['field']) && $response['entry'][0]['changes'][0]['field'] == 'feed') 
-            $url=base_url()."comment_automation/webhook_callback_main";
+        if(isset($response['entry'][0]['changes'][0]['field']) && $response['entry'][0]['changes'][0]['field'] == 'feed')
+            return base_url()."comment_automation/webhook_callback_main";
 
-        else if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'status') 
-            $url=base_url()."comment_automation/webhook_callback_main";
-        else if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'share')
-            $url=base_url()."comment_automation/webhook_callback_main";
+        if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'status')
+            return base_url()."comment_automation/webhook_callback_main";
+        if(isset($response['entry'][0]['changes'][0]['value']['item']) && $response['entry'][0]['changes'][0]['value']['item'] == 'share')
+            return base_url()."comment_automation/webhook_callback_main";
 
-        else if(isset($response['entry'][0]['changes'][0]['field']) && $response['entry'][0]['changes'][0]['field'] == 'mentions')
-            $url=base_url()."instagram_reply/webhook_callback";
-        else if(isset($response['entry'][0]['changes'][0]['field']) && $response['entry'][0]['changes'][0]['field'] == 'comments')
-            $url=base_url()."instagram_reply/webhook_callback";
+        if(isset($response['entry'][0]['changes'][0]['field']) && $response['entry'][0]['changes'][0]['field'] == 'mentions')
+            return base_url()."instagram_reply/webhook_callback";
+        if(isset($response['entry'][0]['changes'][0]['field']) && $response['entry'][0]['changes'][0]['field'] == 'comments')
+            return base_url()."instagram_reply/webhook_callback";
 
-        if($url=='') exit;
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch,CURLOPT_POST,1);
-        curl_setopt($ch,CURLOPT_POSTFIELDS,$json_response);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);  
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);  
-        $reply_response=curl_exec($ch);
+        return '';
     }
     
     public function send_reply_ez($access_token='',$reply='')
