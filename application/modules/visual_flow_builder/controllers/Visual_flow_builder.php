@@ -217,27 +217,39 @@ class Visual_flow_builder extends Home
     {
         $this->ajax_check();
 
-        $str = '';
+        $response = ['campaigns' => []];
+        $limit = (int) $this->input->post('limit', true);
+        $offset = (int) $this->input->post('offset', true);
+        $search = trim($this->input->post('search', true));
+
+        if($limit <= 0) $limit = 50;
+        if($offset < 0) $offset = 0;
+
         if($this->addon_exist("custom_field_manager"))
         {
-            $page_id=$this->input->post('page_table_id',true);// database 
+            $page_id=$this->input->post('page_table_id',true);// database
             $instagram_bot_addon = (bool) $this->input->post('instagram_bot_addon',true);
 
             $table_type = 'user_input_flow_campaign';
             $where_type['where'] = array('user_id'=>$this->user_id,"media_type" => $instagram_bot_addon ? 'ig' : 'fb',"page_table_id"=>$page_id);
-            $info_type = $this->basic->get_data($table_type,$where_type);
-            
-            $str = '<option value="">'.$this->lang->line('Select Flow campaign').'</option>';
+            if($search !== '') $where_type['like'] = ['flow_name' => $search];
+            $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $limit, $offset,'flow_name');
+
             foreach ($info_type as  $value)
             {
-                $id = $value['id'];
-                $name = $value['flow_name'];
-                $str.=  "<option value='{$id}'>".$name."</option>";            
-
+                $response['campaigns'][] = [
+                    'id' => $value['id'],
+                    'name' => $value['flow_name']
+                ];
             }
+            $response['pagination'] = [
+                'limit' => $limit,
+                'offset' => $offset,
+                'has_more' => count($info_type) >= $limit
+            ];
         }
 
-        echo json_encode(array('dropdown_str'=>$str));
+        echo json_encode($response);
     }
 
     public function get_label_sequence_dropdown()
@@ -248,39 +260,58 @@ class Visual_flow_builder extends Home
         $requested_from=$this->input->post('requested_from'); // Request from what?
         $instagram_bot_addon = (bool) $this->input->post('instagram_bot_addon',true);
 
-        $response = [];
+        $label_limit = (int) $this->input->post('label_limit', true);
+        $label_offset = (int) $this->input->post('label_offset', true);
+        $label_search = trim($this->input->post('label_search', true));
+
+        $drip_limit = (int) $this->input->post('drip_limit', true);
+        $drip_offset = (int) $this->input->post('drip_offset', true);
+        $drip_search = trim($this->input->post('drip_search', true));
+
+        if($label_limit <= 0) $label_limit = 50;
+        if($label_offset < 0) $label_offset = 0;
+        if($drip_limit <= 0) $drip_limit = 50;
+        if($drip_offset < 0) $drip_offset = 0;
+
+        $response = ['labels' => [], 'drip_sequences' => []];
         $table_type = 'messenger_bot_broadcast_contact_group';
         $where_type['where'] = array('user_id'=>$this->user_id,"page_id"=>$page_id,"social_media" => $instagram_bot_addon ? "ig" : "fb","unsubscribe"=>"0","invisible"=>"0");
-        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $limit='', $start='', $order_by='group_name');
-        $label_str = '';
-        // $label_str = '<option value="0">'.$this->lang->line('Select Labels').'</option>';
+        if($label_search !== '') $where_type['like'] = ['group_name' => $label_search];
+        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $label_limit, $label_offset, 'group_name');
+        $labels = [];
         foreach ($info_type as  $value)
         {
-            $search_key = $value['id'];
-            $search_type = $value['group_name'];
-            $label_str .=  "<option value='{$search_key}'>".$search_type."</option>";            
+            $labels[] = ['id' => $value['id'], 'name' => $value['group_name']];
         }
-        $response['label_dropdown'] = $label_str;
-
+        $response['labels'] = $labels;
+        $response['label_pagination'] = [
+            'limit' => $label_limit,
+            'offset' => $label_offset,
+            'has_more' => count($info_type) >= $label_limit
+        ];
 
         $table_type = 'messenger_bot_drip_campaign';
         $where_type['where'] = array('user_id'=>$this->user_id,"page_id"=>$page_id);
-        $info_type = $this->basic->get_data($table_type,$where_type,$select='');
-        $drip_str = '<option value="">'.$this->lang->line('Select a sequence').'</option>';
+        if($drip_search !== '') $where_type['like'] = ['campaign_name' => $drip_search];
+        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $drip_limit, $drip_offset, 'campaign_name');
+        $drip_sequences = [];
 
         if ('new_postback' == $requested_from || 'reference' == $requested_from) {
-            $drip_str .= '<option value="newSequence">'.$this->lang->line('New sequence').'</option>';
+            $drip_sequences[] = ['id' => 'newSequence', 'name' => $this->lang->line('New sequence')];
         }
 
         foreach ($info_type as  $value)
         {
-            $search_key = $value['id'];
-            $search_value = $value['campaign_name'];
-            $drip_str .=  "<option value='{$search_key}'>".$search_value."</option>";
+            $drip_sequences[] = ['id' => $value['id'], 'name' => $value['campaign_name']];
         }
-        $response['drip_dropdown'] = $drip_str;
+        $response['drip_sequences'] = $drip_sequences;
+        $response['drip_pagination'] = [
+            'limit' => $drip_limit,
+            'offset' => $drip_offset,
+            'has_more' => count($info_type) >= $drip_limit
+        ];
 
-        $pageinfo = $this->basic->get_data("facebook_rx_fb_page_info",array("where"=>array("id"=>$page_id)));        
+        $pageinfo = $this->basic->get_data("facebook_rx_fb_page_info",array("where"=>array("id"=>$page_id)));
         $mme_link=base_url();
         if(isset($pageinfo[0]))
         {
@@ -298,15 +329,28 @@ class Visual_flow_builder extends Home
         $this->ajax_check();
 
         $page_id=$this->input->post('page_table_id'); // database id
-        $response = [];
+        $limit = (int) $this->input->post('limit', true);
+        $offset = (int) $this->input->post('offset', true);
+        $search = trim($this->input->post('search', true));
+
+        if($limit <= 0) $limit = 50;
+        if($offset < 0) $offset = 0;
+
+        $response = ['labels' => []];
         $table_type = 'messenger_bot_broadcast_contact_group';
         $where_type['where'] = array('user_id'=>$this->user_id,"page_id"=>$page_id,"unsubscribe"=>"0","invisible"=>"0");
-        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $limit='', $start='', $order_by='group_name');
-            
+        if($search !== '') $where_type['like'] = ['group_name' => $search];
+        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $limit, $offset, 'group_name');
+
         foreach ($info_type as  $value)
-        {            
-            $response[] = [ 'key' => $value['id'], 'value' => $value['group_name']];
+        {
+            $response['labels'][] = [ 'id' => $value['id'], 'name' => $value['group_name']];
         }
+        $response['pagination'] = [
+            'limit' => $limit,
+            'offset' => $offset,
+            'has_more' => count($info_type) >= $limit
+        ];
 
         echo json_encode($response, true);
     }
@@ -315,25 +359,33 @@ class Visual_flow_builder extends Home
     {
         $this->ajax_check();
 
-        $response = [];
+        $limit = (int) $this->input->post('limit', true);
+        $offset = (int) $this->input->post('offset', true);
+        $search = trim($this->input->post('search', true));
+
+        if($limit <= 0) $limit = 50;
+        if($offset < 0) $offset = 0;
+
+        $response = ['custom_fields' => []];
         $table_type = 'user_input_custom_fields';
         $where_type['where'] = array('user_id'=>$this->user_id,"media_type"=>('ig' == $media_type ? "ig" : "fb"));
-        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $limit='', $start='', $order_by='name');
-        $options = '<option value="">' . $this->lang->line("Select") . '</option>';
-        $optionsArray = [];
+        if($search !== '') $where_type['like'] = ['name' => $search];
+        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $limit, $offset, 'name');
+        $custom_fields = [];
 
         foreach ($info_type as  $value)
         {
-            $search_key = $value['id'];
-            $search_type = $value['name'];
-            $options .=  "<option value='custom_{$search_key}'>".$search_type."</option>";
-            $optionsArray[] = ['key' => $value['id'], 'value' => $value['name']];
+            $custom_fields[] = ['id' => $value['id'], 'name' => $value['name']];
         }
-        $response['custom_field_variable_dropdown'] = $options;
-        $response['custom_field_variable_dropdown_array'] = $optionsArray;
+        $response['custom_fields'] = $custom_fields;
+        $response['pagination'] = [
+            'limit' => $limit,
+            'offset' => $offset,
+            'has_more' => count($info_type) >= $limit
+        ];
 
         echo json_encode($response,true);
-    }   
+    }
 
     public function get_store_list()
     {
