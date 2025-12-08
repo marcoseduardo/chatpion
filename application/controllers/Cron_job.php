@@ -3,10 +3,16 @@ require_once("Home.php");
 
 class Cron_job extends Home
 {
+    /**
+     * Local cache for sequence/postback templates to avoid repeated lookups during a single cron run.
+     * @var array<int,array>
+     */
+    protected $sequence_template_cache = [];
+
     public function __construct()
     {
         parent::__construct();
-        $this->upload_path = realpath( APPPATH . '../upload');        
+        $this->upload_path = realpath( APPPATH . '../upload');
     }
 
 
@@ -42,8 +48,29 @@ class Cron_job extends Home
         $getdata= $this->basic->get_data("facebook_rx_fb_user_info",array("where"=>array("id"=>$fb_user_id)),array("facebook_rx_config_id"));
         $return_val = isset($getdata[0]["facebook_rx_config_id"]) ? $getdata[0]["facebook_rx_config_id"] : 0;
 
-        return $return_val; 
-       
+        return $return_val;
+
+    }
+
+    /**
+     * Retrieves messenger postback templates with simple in-memory caching to reduce repeated queries
+     * during sequence processing.
+     *
+     * @param int|string $template_id
+     * @return array
+     */
+    protected function get_sequence_template($template_id)
+    {
+        if(empty($template_id)) return [];
+
+        if(isset($this->sequence_template_cache[$template_id])) {
+            return $this->sequence_template_cache[$template_id];
+        }
+
+        $template_data = $this->basic->get_data("messenger_bot_postback",array("where"=>array("id"=>$template_id)));
+        $this->sequence_template_cache[$template_id] = $template_data;
+
+        return $template_data;
     }
 
 
@@ -2214,7 +2241,7 @@ class Cron_job extends Home
 
 
 
-                        $template_data=$this->basic->get_data("messenger_bot_postback",array("where"=>array("id"=>$sending_template_id)));
+                        $template_data=$this->get_sequence_template($sending_template_id);
                         if(!isset($template_data[0])) 
                         {
                               $sent_response[] = "Message template not found.";
@@ -2760,7 +2787,7 @@ class Cron_job extends Home
 
                     if($drip_campaign_type=='messenger'){
 
-                        $template_data=$this->basic->get_data("messenger_bot_postback",array("where"=>array("id"=>$sending_template_id)));
+                        $template_data=$this->get_sequence_template($sending_template_id);
                         if(!isset($template_data[0])) 
                         {
                               $sent_response[] = "Message template not found.";

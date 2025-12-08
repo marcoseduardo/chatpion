@@ -5345,6 +5345,10 @@ class Home extends CI_Controller
 
     public function thirdparty_webhook_trigger($page_id="",$subscriber_id="",$trigger='trigger_email',$postback_id="",$form_canonical_id="",$form_data=array())
     {
+        static $connector_cache = [];
+        static $subscriber_cache = [];
+
+        $where_simple = array();
 
         if($trigger=='trigger_postback')
             $trigger="trigger_postback_".$postback_id;
@@ -5355,56 +5359,68 @@ class Home extends CI_Controller
             $trigger="trigger_userinput_".$form_canonical_id;
 
         if(isset($this->user_id) && $this->user_id!="")
-         $where_simple['messenger_bot_thirdparty_webhook.user_id'] = $this->user_id;
+            $where_simple['messenger_bot_thirdparty_webhook.user_id'] = $this->user_id;
 
         $where_simple['messenger_bot_thirdparty_webhook.page_id'] = $page_id;
         $where_simple['messenger_bot_thirdparty_webhook_trigger.trigger_option'] = $trigger;
         $where=array('where'=>$where_simple);
-       
+
         /**Get all connector webhook information**/
+        $cache_key = md5(json_encode($where_simple));
+        if(!isset($connector_cache[$cache_key]))
+        {
+            $join = array('messenger_bot_thirdparty_webhook_trigger'=>"        
+                messenger_bot_thirdparty_webhook.id=messenger_bot_thirdparty_webhook_trigger.webhook_id,left");
 
-        $join = array('messenger_bot_thirdparty_webhook_trigger'=>"
-            messenger_bot_thirdparty_webhook.id=messenger_bot_thirdparty_webhook_trigger.webhook_id,left");
+            $connector_cache[$cache_key]=$this->basic->get_data('messenger_bot_thirdparty_webhook', $where, $select='', $join, $limit='', $start='');
+        }
 
-        $webhook_connector_info=$this->basic->get_data('messenger_bot_thirdparty_webhook', $where, $select='', $join, $limit='', $start='');
+        $webhook_connector_info=$connector_cache[$cache_key];
 
         if(empty($webhook_connector_info)) return false;
 
         /** Get subscriber information  **/
 
+        $subscriber_cache_key = $subscriber_id.'_'.$page_id;
 
-        $where_simple=array();
-        $where_simple['messenger_bot_subscriber.subscribe_id'] =$subscriber_id ;
-        $where_simple['messenger_bot_subscriber.page_id'] = "$page_id";
-        $where=array('where'=>$where_simple);
-        $join=array("messenger_bot_subscribers_label"=>"messenger_bot_subscribers_label.subscriber_table_id=messenger_bot_subscriber.id,left");
-        $select=["GROUP_CONCAT(DISTINCT messenger_bot_subscribers_label.contact_group_id separator ',') as contact_group_ids","messenger_bot_subscriber.*"];
+        if(!isset($subscriber_cache[$subscriber_cache_key]))
+        {
+            $where_simple=array();
+            $where_simple['messenger_bot_subscriber.subscribe_id'] =$subscriber_id ;
+            $where_simple['messenger_bot_subscriber.page_id'] = "$page_id";
+            $where=array('where'=>$where_simple);
+            $join=array("messenger_bot_subscribers_label"=>"messenger_bot_subscribers_label.subscriber_table_id=messenger_bot_subscriber.id,left");
+            $select=["GROUP_CONCAT(DISTINCT messenger_bot_subscribers_label.contact_group_id separator ',') as contact_group_ids","messenger_bot_subscriber.*"];
 
-        $subscriber_info=$this->basic->get_data('messenger_bot_subscriber', $where, $select, $join, $limit='', $start='','','messenger_bot_subscriber.id');
+            $subscriber_cache[$subscriber_cache_key]['info']=$this->basic->get_data('messenger_bot_subscriber', $where, $select, $join, $limit='', $start='','','messenger_bot_subscriber.id');
 
-        /**Get subscriber Labels name from labels id***/
+            /**Get subscriber Labels name from labels id***/
 
-        $label_ids = $subscriber_info_rearrange['contact_group_id']=isset($subscriber_info[0]['contact_group_ids']) ? $subscriber_info[0]['contact_group_ids']:"";
+            $label_ids = $subscriber_cache[$subscriber_cache_key]['info_rearrange']['contact_group_id']=isset($subscriber_cache[$subscriber_cache_key]['info'][0]['contact_group_ids']) ? $subscriber_cache[$subscriber_cache_key]['info'][0]['contact_group_ids']:"";
 
-        $label_ids_array = explode(',',$label_ids);
-        $label_ids_array = array_map('trim', $label_ids_array);
-        $label_ids_array = array_filter($label_ids_array);
+            $label_ids_array = explode(',',$label_ids);
+            $label_ids_array = array_map('trim', $label_ids_array);
+            $label_ids_array = array_filter($label_ids_array);
 
-        $labels_name="";
+            $labels_name="";
 
-        if(!empty($label_ids_array)){
+            if(!empty($label_ids_array)){
 
-            $where=array("where_in"=>array("id"=>$label_ids_array));
+                $where=array("where_in"=>array("id"=>$label_ids_array));
 
-            $label_info = $this->basic->get_data("messenger_bot_broadcast_contact_group",$where);
+                $label_info = $this->basic->get_data("messenger_bot_broadcast_contact_group",$where);
 
-            foreach($label_info as $value)
-            {
-                $labels_name.=",".$value['group_name'];
+                foreach($label_info as $value)
+                {
+                    $labels_name.=",".$value['group_name'];
+                }
             }
+
+            $subscriber_cache[$subscriber_cache_key]['labels_name']=trim($labels_name,",");
         }
 
-        $labels_name =trim($labels_name,",");
+        $subscriber_info = $subscriber_cache[$subscriber_cache_key]['info'];
+        $labels_name = $subscriber_cache[$subscriber_cache_key]['labels_name'];
 
         foreach ($webhook_connector_info as $webhook_value) {
         
