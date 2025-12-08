@@ -6,12 +6,14 @@ class Messenger_bot extends Home
     public $postback_info;
     public $postback_array=array();
     public $postback_done=array();
+    protected $dropdown_cache_ttl = 300;
     public function __construct()
     {
         parent::__construct();
         $this->user_id=$this->session->userdata('user_id'); // user_id of logged in user, we may need it
+        if(!isset($this->cache)) $this->load->driver('cache', array('adapter'=>'file'));
         $function_name=$this->uri->segment(2);
-        if($function_name!="webhook_callback" && $function_name!="webhook_callback_main" && $function_name!="update_first_name_last_name" && $function_name!="send_message_bot_reply") 
+        if($function_name!="webhook_callback" && $function_name!="webhook_callback_main" && $function_name!="update_first_name_last_name" && $function_name!="send_message_bot_reply")
         {
               // all addon must be login protected
               //------------------------------------------------------------------------------------------
@@ -75,51 +77,82 @@ class Messenger_bot extends Home
         if(!$_POST) exit();
         $page_id=$this->input->post('page_id');// database id
         $media_type = $this->input->post('hidden_media_type');
+        $limit = (int)$this->input->post('limit');
+        $offset = (int)$this->input->post('offset');
+        $search_value = trim($this->input->post('q', true));
+
+        $limit = ($limit > 0 && $limit <= 100) ? $limit : 20;
+        $offset = ($offset >= 0) ? $offset : 0;
+
+        $cache_key = sprintf('label_dropdown_%s_%s_%s_%s_%s', $this->user_id, $page_id, $media_type, md5($search_value), $offset.'_'.$limit);
+        $cached = $this->cache->get($cache_key);
+        if($cached !== false)
+        {
+            echo json_encode($cached);
+            return;
+        }
+
         $table_type = 'messenger_bot_broadcast_contact_group';
         $where_type['where'] = array('user_id'=>$this->user_id,"page_id"=>$page_id,"unsubscribe"=>"0","invisible"=>"0","social_media"=>$media_type);
-        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $limit='', $start='', $order_by='group_name');
-        $result = array();
-        $group_name =array();
+        if($search_value !== '') $where_type['where']["group_name LIKE "] = "%{$search_value}%";
 
-        $dropdown=array();
-        $str='<script>$("#label_ids").select2();</script> ';
-        $str .='<select multiple=""  class="form-control select2" id="label_ids" name="label_ids[]">';
-        $str .= '<option value="">'.$this->lang->line('Select Labels').'</option>';
-        foreach ($info_type as  $value)
+        $fetch_limit = $limit + 1;
+        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $fetch_limit, $offset, 'group_name');
+        $results = array();
+        foreach ($info_type as $index => $value)
         {
-            $search_key = $value['id'];
-            $search_type = $value['group_name'];
-            $str.=  "<option value='{$search_key}'>".$search_type."</option>";            
-
+            if($index === $limit) break;
+            $results[] = array('id' => $value['id'], 'text' => $value['group_name']);
         }
-        $str.= '</select>';
 
-        echo json_encode(array('first_dropdown'=>$str));
+        $response = array(
+            'results' => $results,
+            'pagination' => array('more' => count($info_type) > $limit)
+        );
+        $this->cache->save($cache_key, $response, $this->dropdown_cache_ttl);
+
+        echo json_encode($response);
     }
 
     public function get_flow_campaign_info()
     {
         $this->ajax_check();
-        $str = '';
+        $limit = (int)$this->input->post('limit');
+        $offset = (int)$this->input->post('offset');
+        $search_value = trim($this->input->post('q', true));
+
+        $limit = ($limit > 0 && $limit <= 100) ? $limit : 20;
+        $offset = ($offset >= 0) ? $offset : 0;
+        $response = array('results' => array(), 'pagination' => array('more' => false));
         if($this->addon_exist("custom_field_manager"))
         {
             $page_id=$this->input->post('page_id');// database id
             $media_type = $this->input->post('hidden_media_type');
             $table_type = 'user_input_flow_campaign';
             $where_type['where'] = array('user_id'=>$this->user_id,"page_table_id"=>$page_id,"media_type"=>$media_type);
-            $info_type = $this->basic->get_data($table_type,$where_type);
-            
-            $str = '<option value="">'.$this->lang->line('Select Flow campaign').'</option>';
-            foreach ($info_type as  $value)
+            $cache_key = sprintf('flow_campaign_dropdown_%s_%s_%s_%s_%s', $this->user_id, $page_id, $media_type, md5($search_value), $offset.'_'.$limit);
+            $cached = $this->cache->get($cache_key);
+            if($cached !== false)
             {
-                $id = $value['id'];
-                $name = $value['flow_name'];
-                $str.=  "<option value='{$id}'>".$name."</option>";            
-
+                echo json_encode($cached);
+                return;
             }
+            if($search_value !== '') $where_type['where']["flow_name LIKE "] = "%{$search_value}%";
+
+            $fetch_limit = $limit + 1;
+            $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $fetch_limit, $offset, 'flow_name');
+
+            foreach ($info_type as $index => $value)
+            {
+                if($index === $limit) break;
+                $response['results'][] = array('id' => $value['id'], 'text' => $value['flow_name']);
+            }
+
+            $response['pagination']['more'] = count($info_type) > $limit;
+            $this->cache->save($cache_key, $response, $this->dropdown_cache_ttl);
         }
 
-        echo json_encode(array('flow_campaigns'=>$str));
+        echo json_encode($response);
     }
 
     public function get_drip_campaign_dropdown()
@@ -127,25 +160,42 @@ class Messenger_bot extends Home
         if(!$_POST) exit();
         $page_id=$this->input->post('page_id');// database id
         $media_type = $this->input->post('hidden_media_type');
+        $limit = (int)$this->input->post('limit');
+        $offset = (int)$this->input->post('offset');
+        $search_value = trim($this->input->post('q', true));
+
+        $limit = ($limit > 0 && $limit <= 100) ? $limit : 20;
+        $offset = ($offset >= 0) ? $offset : 0;
+
+        $cache_key = sprintf('drip_campaign_dropdown_%s_%s_%s_%s_%s', $this->user_id, $page_id, $media_type, md5($search_value), $offset.'_'.$limit);
+        $cached = $this->cache->get($cache_key);
+        if($cached !== false)
+        {
+            echo json_encode($cached);
+            return;
+        }
+
         $table_type = 'messenger_bot_drip_campaign';
         $where_type['where'] = array('user_id'=>$this->user_id,"page_id"=>$page_id,"media_type"=>$media_type);
-        $info_type = $this->basic->get_data($table_type,$where_type,$select='');
-        $result = array();
-        $group_name =array();
+        if($search_value !== '') $where_type['where']["campaign_name LIKE "] = "%{$search_value}%";
 
-        $dropdown=array();
-        $str='<script>$("#drip_campaign_id").select2();</script> ';
-        $str .='<select class="form-control select2" id="drip_campaign_id" name="drip_campaign_id[]">';
-        $str .= '<option value="">'.$this->lang->line('Select').'</option>';
-        foreach ($info_type as  $value)
+        $fetch_limit = $limit + 1;
+        $info_type = $this->basic->get_data($table_type,$where_type,$select='', $join='', $fetch_limit, $offset, 'campaign_name');
+
+        $results = array();
+        foreach ($info_type as $index => $value)
         {
-            $search_key = $value['id'];
-            $search_value = $value['campaign_name'];
-            $str.=  "<option value='{$search_key}'>".$search_value."</option>";
+            if($index === $limit) break;
+            $results[] = array('id' => $value['id'], 'text' => $value['campaign_name']);
         }
-        $str.= '</select>';
 
-        echo json_encode(array('dropdown_value'=>$str));
+        $response = array(
+            'results' => $results,
+            'pagination' => array('more' => count($info_type) > $limit)
+        );
+        $this->cache->save($cache_key, $response, $this->dropdown_cache_ttl);
+
+        echo json_encode($response);
     }
 
 

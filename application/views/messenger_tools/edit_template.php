@@ -325,15 +325,18 @@
                         $broadcaster_labels=explode(',', $broadcaster_labels);
 
                         $str ='<span id="first_dropdown"><select multiple="" class="form-control select2" id="label_ids" name="label_ids[]">';
-                        $str .= '<option value="">'.$this->lang->line('Select Labels').'</option>';
+                        if(!empty($broadcaster_labels))
+                            $str .= '<option value="">'.$this->lang->line('Select Labels').'</option>';
+
                         foreach ($info_type as  $value)
                         {
                             $search_key = $value['id'];
-                            $search_type = $value['group_name'];
-                            $selected='';
-                            if(in_array($search_key, $broadcaster_labels)) $selected='selected="selected"';
+                            if(!in_array($search_key, $broadcaster_labels)) continue;
 
-                            $str.=  "<option value='{$search_key}' {$selected}>".$search_type."</option>";  
+                            $search_type = $value['group_name'];
+                            $selected='selected="selected"';
+
+                            $str.=  "<option value='{$search_key}' {$selected}>".$search_type."</option>";
                         }
                         $str.= '</select></span>';
                         echo $str;
@@ -355,15 +358,15 @@
                         $dripcampaign_id=explode(',', $dripcampaign_id);
 
                         $str ='<span id="dripcampaign_dropdown"><select class="form-control select2" id="drip_campaign_id" name="drip_campaign_id[]">';
-                        $str .= '<option value="">'.$this->lang->line('Select').'</option>';
                         foreach ($dripcampaign_list as  $value)
                         {
                             $search_key = $value['id'];
-                            $search_type = $value['campaign_name'];
-                            $selected='';
-                            if(in_array($search_key, $dripcampaign_id)) $selected='selected="selected"';
+                            if(!in_array($search_key, $dripcampaign_id)) continue;
 
-                            $str.=  "<option value='{$search_key}' {$selected}>".$search_type."</option>";  
+                            $search_type = $value['campaign_name'];
+                            $selected='selected="selected"';
+
+                            $str.=  "<option value='{$search_key}' {$selected}>".$search_type."</option>";
                         }
                         $str.= '</select></span>';
                         echo $str;
@@ -556,17 +559,28 @@
                           </label>
                           <select class="form-control select2 flow_campaign_info" id="flow_campaign_id_<?php echo $k; ?>" name="flow_campaign_id_<?php echo $k; ?>">
                             <option value=""><?php echo $this->lang->line('Please select a Flow campaign.'); ?></option>
-                            <?php 
+                            <?php
                               $selected_flow_campaign_id = 0;
-                              if(isset($full_message[$k]["template_type"]) && $full_message[$k]["template_type"] == 'User Input Flow') 
+                              $selected_flow_campaign_name = '';
+                              if(isset($full_message[$k]["template_type"]) && $full_message[$k]["template_type"] == 'User Input Flow')
                                 $selected_flow_campaign_id = $full_message[$k]['flow_campaign_id'];
-                              foreach($flow_campaigns as $value) :
+
+                              foreach($flow_campaigns as $value)
+                              {
+                                if($value['id'] == $selected_flow_campaign_id)
+                                {
+                                  $selected_flow_campaign_name = $value['flow_name'];
+                                  break;
+                                }
+                              }
+
+                              if(!empty($selected_flow_campaign_id) && $selected_flow_campaign_name != '') :
                             ?>
-                              <option value="<?php echo $value['id']; ?>" <?php $selected = ($value['id'] == $selected_flow_campaign_id) ? "selected" : ""; echo $selected;?> ><?php echo $value['flow_name']; ?></option>
-                            <?php endforeach; ?>
+                              <option value="<?php echo $selected_flow_campaign_id; ?>" selected><?php echo $selected_flow_campaign_name; ?></option>
+                            <?php endif; ?>
                           </select>
-                        </div>        
-                      </div> 
+                        </div>
+                      </div>
                     </div>
 
                     <div class="row" id="One_Time_Notification_div_<?php echo $k; ?>" style="display: none;"> 
@@ -2790,45 +2804,107 @@ $doyoureallywanttodeletethisbot = $this->lang->line("do you really want to delet
       }
 
 
-      
-      $('.show_label').addClass('hidden');
-      $.ajax({
-        type:'POST' ,
-        url: base_url+'messenger_bot/get_label_dropdown',
-        data: {page_id:page_id,hidden_media_type:hidden_media_type},
-        dataType : 'JSON',
-        success:function(response){
-          $("#create_label_postback").attr("page_id_for_label",page_id); // put page_table_id for create label
-          $('.show_label').removeClass('hidden');
-          $('#first_dropdown').html(response.first_dropdown);      
-        }
-      });
 
-      $.ajax({
-        type:'POST' ,
-        url: base_url+'messenger_bot/get_flow_campaign_info',
-        data: {page_id:page_id,hidden_media_type:hidden_media_type},
-        dataType : 'JSON',
-        success:function(response){
-          $('.flow_campaign_info').html(response.flow_campaigns);   
-        }
-      });
+      var dropdownPageLimit = 20;
+
+      function dropdownAjaxConfig(url) {
+        return {
+          url: url,
+          type:'POST',
+          dataType:'JSON',
+          delay:200,
+          data:function(params){
+            params.page = params.page || 1;
+            return {
+              page_id:page_id,
+              hidden_media_type:hidden_media_type,
+              q: params.term || '',
+              limit: dropdownPageLimit,
+              offset: (params.page - 1) * dropdownPageLimit
+            };
+          },
+          processResults:function(data, params){
+            params.page = params.page || 1;
+            return {
+              results: data.results || [],
+              pagination: data.pagination || {}
+            };
+          }
+        };
+      }
+
+      function initializeLabelDropdown(){
+        var $labelSelect = $("#label_ids");
+        if(!$labelSelect.length) return;
+
+        if($labelSelect.hasClass('select2-hidden-accessible')) $labelSelect.select2('destroy');
+        var selectedOptions = $labelSelect.find('option:selected');
+        $labelSelect.html('');
+        selectedOptions.each(function(){
+          var option = new Option($(this).text(), $(this).val(), true, true);
+          $labelSelect.append(option);
+        });
+
+        $labelSelect.select2({
+          width:'100%',
+          placeholder:'<?php echo $this->lang->line("Select Labels"); ?>',
+          ajax: dropdownAjaxConfig(base_url+'messenger_bot/get_label_dropdown')
+        });
+
+        $("#create_label_postback").attr("page_id_for_label",page_id); // put page_table_id for create label
+        $('.show_label').removeClass('hidden');
+      }
+
+      function initializeFlowCampaignDropdown(){
+        $('.flow_campaign_info').each(function(){
+          var $flowSelect = $(this);
+          var selectedOptions = $flowSelect.find('option:selected');
+          $flowSelect.html('');
+          selectedOptions.each(function(){
+            var option = new Option($(this).text(), $(this).val(), true, true);
+            $flowSelect.append(option);
+          });
+
+          if($flowSelect.hasClass('select2-hidden-accessible')) $flowSelect.select2('destroy');
+
+          $flowSelect.select2({
+            width:'100%',
+            placeholder:'<?php echo $this->lang->line("Select Flow campaign"); ?>',
+            ajax: dropdownAjaxConfig(base_url+'messenger_bot/get_flow_campaign_info')
+          });
+        });
+      }
+
+      function initializeDripCampaignDropdown(){
+        var $dripSelect = $("#drip_campaign_id");
+        if(!$dripSelect.length) return;
+
+        var selectedOptions = $dripSelect.find('option:selected');
+        $dripSelect.html('');
+        selectedOptions.each(function(){
+          var option = new Option($(this).text(), $(this).val(), true, true);
+          $dripSelect.append(option);
+        });
+
+        if($dripSelect.hasClass('select2-hidden-accessible')) $dripSelect.select2('destroy');
+
+        $dripSelect.select2({
+          width:'100%',
+          placeholder:'<?php echo $this->lang->line("Select"); ?>',
+          ajax: dropdownAjaxConfig(base_url+'messenger_bot/get_drip_campaign_dropdown')
+        });
+      }
+
+      initializeLabelDropdown();
+      initializeFlowCampaignDropdown();
 
       $('.dropdown_con').addClass('hidden');
       var is_drip_campaigner_exist='<?php echo $this->is_drip_campaigner_exist;?>';
       var is_sms_email_drip_campaigner_exist = '<?php echo $this->is_sms_email_drip_campaigner_exist;?>';
       if(is_drip_campaigner_exist==false && is_sms_email_drip_campaigner_exist==false) return;
 
-      $.ajax({
-        type:'POST' ,
-        url: base_url+'messenger_bot/get_drip_campaign_dropdown',
-        data: {page_id:page_id,hidden_media_type:hidden_media_type},
-        dataType : 'JSON',
-        success:function(response){
-          $('.dropdown_con').removeClass('hidden');
-          $('#dripcampaign_dropdown').html(response.dropdown_value);      
-        }
-      });
+      initializeDripCampaignDropdown();
+      $('.dropdown_con').removeClass('hidden');
       // $('.dropdown_con').removeClass('hidden');
     }
 
