@@ -257,10 +257,12 @@
                   <div class="form-group">
                     <label style="width:100%" class="show_label hidden">
                     '.$this->lang->line("Choose Labels").' '.$popover.'
-                    <a class="blue float-right pointer" page_id_for_label="" id="create_label_postback"><i class="fas fa-plus-circle"></i> '.$this->lang->line("Create Label").'</a>  
+                    <a class="blue float-right pointer" page_id_for_label="" id="create_label_postback"><i class="fas fa-plus-circle"></i> '.$this->lang->line("Create Label").'</a>
                     </label>
-                    <span id="first_dropdown"></span>                                  
-                  </div>       
+                    <span id="first_dropdown">
+                      <select multiple=""  class="form-control select2" id="label_ids" name="label_ids[]"></select>
+                    </span>
+                  </div>
               </div>';
 
               if($this->is_drip_campaigner_exist || $this->is_sms_email_drip_campaigner_exist)
@@ -272,8 +274,10 @@
                         <label style="width:100%">
                         '.$this->lang->line("Choose Sequence Campaigns").' '.$popover2.'
                         </label>
-                        <span id="dripcampaign_dropdown"></span>                                  
-                      </div>       
+                        <span id="dripcampaign_dropdown">
+                          <select class="form-control select2" id="drip_campaign_id" name="drip_campaign_id[]"></select>
+                        </span>
+                      </div>
                   </div>';
               }
               echo '</div>';                  
@@ -1460,7 +1464,7 @@
     });
 
     if($("input[name=postback_type]:checked").val()=="child")
-    {          
+    {
       $.ajax({
         type:'POST' ,
         url: base_url+'messenger_bot/get_postback_dropdown',
@@ -1476,50 +1480,106 @@
             return false;
           }
           else
-            $("#postback_section").html(response.first_dropdown);   
+            $("#postback_section").html(response.first_dropdown);
         }
       });
     }
-    
-    $('.show_label').addClass('hidden');
-    $.ajax({
-      type:'POST' ,
-      url: base_url+'messenger_bot/get_label_dropdown',
-      data: {page_id:page_id,hidden_media_type:hidden_media_type},
-      dataType : 'JSON',
-      success:function(response){
-        $(".show_label #create_label_postback").attr("page_id_for_label",page_id); // put page_table_id for create label
-        $('.show_label').removeClass('hidden');
-        $('#first_dropdown').html(response.first_dropdown);      
-      }
-    });
 
-    $.ajax({
-      type:'POST' ,
-      url: base_url+'messenger_bot/get_flow_campaign_info',
-      data: {page_id:page_id,hidden_media_type:hidden_media_type},
-      dataType : 'JSON',
-      success:function(response){
-        $('.flow_campaign_info').html(response.flow_campaigns);   
-      }
-    });
+    var dropdownPageLimit = 20;
 
+    function dropdownAjaxConfig(url) {
+      return {
+        url: url,
+        type:'POST',
+        dataType:'JSON',
+        delay:200,
+        data:function(params){
+          params.page = params.page || 1;
+          return {
+            page_id:page_id,
+            hidden_media_type:hidden_media_type,
+            q: params.term || '',
+            limit: dropdownPageLimit,
+            offset: (params.page - 1) * dropdownPageLimit
+          };
+        },
+        processResults:function(data, params){
+          params.page = params.page || 1;
+          return {
+            results: data.results || [],
+            pagination: data.pagination || {}
+          };
+        }
+      };
+    }
+
+    function initializeLabelDropdown(){
+      var $labelSelect = $("#label_ids");
+      if(!$labelSelect.length) return;
+
+      if($labelSelect.hasClass('select2-hidden-accessible')) $labelSelect.select2('destroy');
+      $labelSelect.html('');
+
+      $labelSelect.select2({
+        width:'100%',
+        placeholder:'<?php echo $this->lang->line("Select Labels"); ?>',
+        ajax: dropdownAjaxConfig(base_url+'messenger_bot/get_label_dropdown')
+      });
+
+      $(".show_label #create_label_postback").attr("page_id_for_label",page_id); // put page_table_id for create label
+      $('.show_label').removeClass('hidden');
+    }
+
+    function initializeFlowCampaignDropdown(){
+      $('.flow_campaign_info').each(function(){
+        var $flowSelect = $(this);
+        var selectedOptions = $flowSelect.find('option:selected');
+        $flowSelect.html('');
+        selectedOptions.each(function(){
+          var option = new Option($(this).text(), $(this).val(), true, true);
+          $flowSelect.append(option);
+        });
+
+        if($flowSelect.hasClass('select2-hidden-accessible')) $flowSelect.select2('destroy');
+
+        $flowSelect.select2({
+          width:'100%',
+          placeholder:'<?php echo $this->lang->line("Select Flow campaign"); ?>',
+          ajax: dropdownAjaxConfig(base_url+'messenger_bot/get_flow_campaign_info')
+        });
+      });
+    }
+
+    function initializeDripCampaignDropdown(){
+      var $dripSelect = $("#drip_campaign_id");
+      if(!$dripSelect.length) return;
+
+      var selectedOptions = $dripSelect.find('option:selected');
+      $dripSelect.html('');
+      selectedOptions.each(function(){
+        var option = new Option($(this).text(), $(this).val(), true, true);
+        $dripSelect.append(option);
+      });
+
+      if($dripSelect.hasClass('select2-hidden-accessible')) $dripSelect.select2('destroy');
+
+      $dripSelect.select2({
+        width:'100%',
+        placeholder:'<?php echo $this->lang->line("Select"); ?>',
+        ajax: dropdownAjaxConfig(base_url+'messenger_bot/get_drip_campaign_dropdown')
+      });
+    }
+
+    initializeLabelDropdown();
+    initializeFlowCampaignDropdown();
 
     $('.dropdown_con').addClass('hidden');
     var is_drip_campaigner_exist='<?php echo $this->is_drip_campaigner_exist;?>';
     var is_sms_email_drip_campaigner_exist = '<?php echo $this->is_sms_email_drip_campaigner_exist;?>';
     if(is_drip_campaigner_exist==false && is_sms_email_drip_campaigner_exist==false) return;
 
-    $.ajax({
-      type:'POST' ,
-      url: base_url+'messenger_bot/get_drip_campaign_dropdown',
-      data: {page_id:page_id,hidden_media_type:hidden_media_type},
-      dataType : 'JSON',
-      success:function(response){
-        $('.dropdown_con').removeClass('hidden');
-        $('#dripcampaign_dropdown').html(response.dropdown_value);      
-      }
-    });
+    initializeDripCampaignDropdown();
+    $('.dropdown_con').removeClass('hidden');
     // $('.dropdown_con').removeClass('hidden');
   }
 
