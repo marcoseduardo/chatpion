@@ -117,7 +117,8 @@ class Messenger_bot extends Home
         $first_dropdown .= '<option value="">'.$this->lang->line('Select Labels').'</option>';
         foreach ($all_label_list as $value)
         {
-            $first_dropdown .= "<option value='{$value['id']}'>{$value['group_name']}</option>";
+            $group_name = htmlspecialchars($value['group_name'], ENT_QUOTES);
+            $first_dropdown .= "<option value='{$value['id']}'>{$group_name}</option>";
         }
         $first_dropdown .= '</select>';
 
@@ -214,7 +215,8 @@ class Messenger_bot extends Home
         $dropdown_value .= '<option value=""></option>';
         foreach ($all_campaigns as $value)
         {
-            $dropdown_value .= "<option value='{$value['id']}'>{$value['campaign_name']}</option>";
+            $campaign_name = htmlspecialchars($value['campaign_name'], ENT_QUOTES);
+            $dropdown_value .= "<option value='{$value['id']}'>{$campaign_name}</option>";
         }
         $dropdown_value .= '</select>';
 
