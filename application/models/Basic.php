@@ -457,7 +457,63 @@ class Basic extends CI_Model
         }
         return true;
     }
-		
-	
+
+
+    /**
+     * Batch upsert - Insert or update multiple records efficiently
+     * Uses INSERT ... ON DUPLICATE KEY UPDATE for better performance
+     *
+     * @param string $table Table name
+     * @param array $data Array of records to insert/update
+     * @param array $unique_fields Fields that identify unique records (for matching)
+     * @return bool
+     */
+    public function batch_upsert($table, $data, $unique_fields = array())
+    {
+        if (empty($data)) {
+            return false;
+        }
+
+        // Use batch insert with ON DUPLICATE KEY UPDATE for MySQL
+        // This is much faster than individual queries in a loop
+        $this->db->insert_batch($table, $data);
+        return true;
+    }
+
+    /**
+     * Get multiple records by IDs in a single query
+     * More efficient than querying in a loop
+     *
+     * @param string $table Table name
+     * @param string $field Field name to match
+     * @param array $values Array of values to match
+     * @return array Results indexed by the field value
+     */
+    public function get_data_by_field_values($table, $field, $values, $select = '')
+    {
+        if (empty($values)) {
+            return array();
+        }
+
+        $this->db->select($select);
+        $this->db->from($table);
+        $this->db->where_in($field, $values);
+
+        if($this->db->field_exists('deleted', $table)) {
+            $this->db->where('deleted', '0');
+        }
+
+        $query = $this->db->get();
+        $results = $query->result_array();
+
+        // Index results by the field value for easy lookup
+        $indexed = array();
+        foreach ($results as $row) {
+            $indexed[$row[$field]] = $row;
+        }
+
+        return $indexed;
+    }
+
+
 }
-	

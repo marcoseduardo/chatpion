@@ -1178,8 +1178,9 @@ class Home extends CI_Controller
             }
             else $where['where'] = array('email' => $username, 'password' => $password, "deleted" => "0","status"=>"1");
 
-
-            $info = $this->basic->get_data($table, $where, $select = '', $join = '', $limit = '', $start = '', $order_by = '', $group_by = '', $num_rows = 1);
+            // PERFORMANCE OPTIMIZATION: Select only needed fields for login (not all 32 fields)
+            $select = array('id', 'name', 'email', 'user_type', 'brand_logo', 'expired_date', 'package_id');
+            $info = $this->basic->get_data($table, $where, $select, $join = '', $limit = '', $start = '', $order_by = '', $group_by = '', $num_rows = 1);
 
             $count = $info['extra_index']['num_rows'];
 
@@ -1217,14 +1218,16 @@ class Home extends CI_Controller
 
                 // for getting usable facebook api (facebook live app)
                 $facebook_rx_config_id=0;
-                $fb_info=$this->basic->get_data("facebook_rx_fb_user_info",array("where"=>array("user_id"=>$user_id)));
+                // PERFORMANCE OPTIMIZATION: Select only 'id' field, use LIMIT 1 instead of RAND()
+                $fb_info=$this->basic->get_data("facebook_rx_fb_user_info",array("where"=>array("user_id"=>$user_id)),array('id','facebook_rx_config_id'),'',1);
                 if($this->config->item("backup_mode")==0)  // users will use admins app
                 {
                     if(isset($fb_info[0]['facebook_rx_config_id']))
                     $facebook_rx_config_id=$fb_info[0]['facebook_rx_config_id'];
                     else
                     {
-                        $fb_info_admin=$this->basic->get_data("facebook_rx_config",array("where"=>array("status"=>'1','use_by'=>'everyone','developer_access'=>'0')),$select='',$join='',$limit='',$start=NULL,$order_by='rand()');
+                        // PERFORMANCE OPTIMIZATION: Removed RAND() (forces full table scan), use LIMIT 1 instead
+                        $fb_info_admin=$this->basic->get_data("facebook_rx_config",array("where"=>array("status"=>'1','use_by'=>'everyone','developer_access'=>'0')),array('id'),'',1,$start=NULL,$order_by='id ASC');
                         if(isset($fb_info_admin[0]['id']))  $facebook_rx_config_id = $fb_info_admin[0]['id'];
                     }
                     $this->session->set_userdata("fb_rx_login_database_id",$facebook_rx_config_id);
@@ -1565,6 +1568,21 @@ class Home extends CI_Controller
 
                     if(!empty($page_list))
                     {
+                        // PERFORMANCE OPTIMIZATION: Get all existing pages in ONE query instead of N queries
+                        $page_ids = array_column($page_list, 'id');
+                        $existing_pages = array();
+                        if (!empty($page_ids)) {
+                            $this->db->where('facebook_rx_fb_user_info_id', $facebook_table_id);
+                            $this->db->where_in('page_id', $page_ids);
+                            $query = $this->db->get('facebook_rx_fb_page_info');
+                            foreach ($query->result_array() as $row) {
+                                $existing_pages[$row['page_id']] = $row;
+                            }
+                        }
+
+                        $pages_to_insert = array();
+                        $pages_to_update = array();
+
                         foreach($page_list as $page)
                         {
                             $page_id = $page['id'];
@@ -1599,11 +1617,11 @@ class Home extends CI_Controller
                             $instagram_account_exist_or_not = '';
                             if($this->config->item('instagram_reply_enable_disable') == '1')
                                 $instagram_account_exist_or_not = $this->fb_rx_login->instagram_account_check_by_id($page['id'], $page['access_token']);
-                            
+
                             if ($instagram_account_exist_or_not != "") {
-                                $instagram_account_info = $this->fb_rx_login->instagram_account_info($instagram_account_exist_or_not, $page['access_token']); 
+                                $instagram_account_info = $this->fb_rx_login->instagram_account_info($instagram_account_exist_or_not, $page['access_token']);
                                 $data['has_instagram'] = '1';
-                                $data['instagram_business_account_id'] = $instagram_account_exist_or_not; 
+                                $data['instagram_business_account_id'] = $instagram_account_exist_or_not;
                                 $data['insta_username'] = isset($instagram_account_info['username']) ? $instagram_account_info['username'] : "";
                                 $data['insta_followers_count'] = isset($instagram_account_info['followers_count']) ? $instagram_account_info['followers_count'] : "";
                                 $data['insta_media_count'] = isset($instagram_account_info['media_count']) ? $instagram_account_info['media_count'] : "";
@@ -1612,22 +1630,26 @@ class Home extends CI_Controller
                             }
                             // end of instagram section
 
-                            $where=array();
-                            $where['where'] = array('facebook_rx_fb_user_info_id'=>$facebook_table_id,'page_id'=>$page['id']);
-                            $exist_or_not = array();
-                            $exist_or_not = $this->basic->get_data('facebook_rx_fb_page_info',$where,$select='',$join='',$limit='',$start=NULL,$order_by='',$group_by='',$num_rows=0,$csv='',$delete_overwrite=1);
-
-                            if(empty($exist_or_not))
+                            // PERFORMANCE OPTIMIZATION: Batch the inserts and updates
+                            if(isset($existing_pages[$page_id]))
                             {
-                                $this->basic->insert_data('facebook_rx_fb_page_info',$data);
+                                $data['id'] = $existing_pages[$page_id]['id'];
+                                $pages_to_update[] = $data;
                             }
                             else
                             {
-                                $where = array('facebook_rx_fb_user_info_id'=>$facebook_table_id,'page_id'=>$page['id']);
-                                $this->basic->update_data('facebook_rx_fb_page_info',$where,$data);
+                                $pages_to_insert[] = $data;
                             }
+                        }
 
+                        // PERFORMANCE OPTIMIZATION: Execute all inserts in ONE query
+                        if (!empty($pages_to_insert)) {
+                            $this->db->insert_batch('facebook_rx_fb_page_info', $pages_to_insert);
+                        }
 
+                        // PERFORMANCE OPTIMIZATION: Execute all updates in ONE query
+                        if (!empty($pages_to_update)) {
+                            $this->db->update_batch('facebook_rx_fb_page_info', $pages_to_update, 'id');
                         }
                     }
 
@@ -1638,6 +1660,21 @@ class Home extends CI_Controller
 
                     if(!empty($group_list))
                     {
+                        // PERFORMANCE OPTIMIZATION: Get all existing groups in ONE query instead of N queries
+                        $group_ids = array_column($group_list, 'id');
+                        $existing_groups = array();
+                        if (!empty($group_ids)) {
+                            $this->db->where('facebook_rx_fb_user_info_id', $facebook_table_id);
+                            $this->db->where_in('group_id', $group_ids);
+                            $query = $this->db->get('facebook_rx_fb_group_info');
+                            foreach ($query->result_array() as $row) {
+                                $existing_groups[$row['group_id']] = $row;
+                            }
+                        }
+
+                        $groups_to_insert = array();
+                        $groups_to_update = array();
+
                         foreach($group_list as $group)
                         {
                             $group_access_token = $access_token; // group uses user access token
@@ -1661,20 +1698,26 @@ class Home extends CI_Controller
                                 'deleted' => '0'
                                 );
 
-                            $where=array();
-                            $where['where'] = array('facebook_rx_fb_user_info_id'=>$facebook_table_id,'group_id'=>$group['id']);
-                            $exist_or_not = array();
-                            $exist_or_not = $this->basic->get_data('facebook_rx_fb_group_info',$where,$select='',$join='',$limit='',$start=NULL,$order_by='',$group_by='',$num_rows=0,$csv='',$delete_overwrite=1);
-
-                            if(empty($exist_or_not))
+                            // PERFORMANCE OPTIMIZATION: Batch the inserts and updates
+                            if(isset($existing_groups[$group_id]))
                             {
-                                $this->basic->insert_data('facebook_rx_fb_group_info',$data);
+                                $data['id'] = $existing_groups[$group_id]['id'];
+                                $groups_to_update[] = $data;
                             }
                             else
                             {
-                                $where = array('facebook_rx_fb_user_info_id'=>$facebook_table_id,'group_id'=>$group['id']);
-                                $this->basic->update_data('facebook_rx_fb_group_info',$where,$data);
+                                $groups_to_insert[] = $data;
                             }
+                        }
+
+                        // PERFORMANCE OPTIMIZATION: Execute all inserts in ONE query
+                        if (!empty($groups_to_insert)) {
+                            $this->db->insert_batch('facebook_rx_fb_group_info', $groups_to_insert);
+                        }
+
+                        // PERFORMANCE OPTIMIZATION: Execute all updates in ONE query
+                        if (!empty($groups_to_update)) {
+                            $this->db->update_batch('facebook_rx_fb_group_info', $groups_to_update, 'id');
                         }
                     }
 
